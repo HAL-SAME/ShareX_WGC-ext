@@ -28,6 +28,7 @@ using System;
 using System.Drawing;
 using System.Threading.Tasks;
 using ShareX.ScreenRecordingLib.Video;
+using SkiaSharp;
 using Bitmap = SkiaSharp.SKBitmap;
 
 namespace ShareX.ScreenCaptureLib
@@ -105,12 +106,19 @@ namespace ShareX.ScreenCaptureLib
                     rect = CaptureHelpers.GetWindowRectangle(handle);
                 }
 
-                if (UseWindowsGraphicsCapture && !CaptureClientArea)
+                if (UseWindowsGraphicsCapture)
                 {
-                    Bitmap bitmap = CaptureWindowWindowsGraphicsCapture(handle, rect.Location, CaptureCursor);
-                    if (bitmap != null)
+                    try
                     {
-                        return bitmap;
+                        Bitmap bitmap = CaptureWindowWindowsGraphicsCapture(handle);
+                        if (bitmap != null)
+                        {
+                            return bitmap;
+                        }
+                    }
+                    catch (Exception exception)
+                    {
+                        DebugHelper.WriteException(exception, "Windows Graphics Capture window screenshot failed. Falling back to GDI.");
                     }
                 }
 
@@ -137,23 +145,68 @@ namespace ShareX.ScreenCaptureLib
             return null;
         }
 
-        private Bitmap CaptureWindowWindowsGraphicsCapture(IntPtr handle, Point location, bool captureCursor)
+        internal Bitmap CaptureWindowWindowsGraphicsCapture(IntPtr handle)
         {
+            Rectangle windowRectangle = CaptureHelpers.GetWindowRectangle(handle);
+            Rectangle captureRectangle = CaptureClientArea ? NativeMethods.GetClientRect(handle) : windowRectangle;
+            Bitmap bitmap = Task.Run(() => WindowsGraphicsCapture.CaptureWindow(handle, HDRScreenshotColorCorrection)).GetAwaiter().GetResult();
+            if (bitmap == null)
+            {
+                return null;
+            }
+
             try
             {
-                Bitmap bitmap = Task.Run(() => WindowsGraphicsCapture.CaptureWindow(handle, HDRScreenshotColorCorrection)).GetAwaiter().GetResult();
-                if (bitmap != null && captureCursor)
+                if (CaptureClientArea)
                 {
-                    try { new CursorData().DrawCursor(bitmap, location); }
+                    if (CaptureHelpers.GetWindowRectangle(handle) != windowRectangle || NativeMethods.GetClientRect(handle) != captureRectangle)
+                    {
+                        throw new InvalidOperationException("The window moved or changed size during capture.");
+                    }
+
+                    if (bitmap.Width != windowRectangle.Width || bitmap.Height != windowRectangle.Height)
+                    {
+                        throw new InvalidOperationException("The captured window dimensions do not match its screen rectangle.");
+                    }
+
+                    Rectangle crop = new(captureRectangle.X - windowRectangle.X, captureRectangle.Y - windowRectangle.Y,
+                        captureRectangle.Width, captureRectangle.Height);
+                    Rectangle imageBounds = new(0, 0, bitmap.Width, bitmap.Height);
+                    if (!crop.IsValid() || Rectangle.Intersect(crop, imageBounds) != crop)
+                    {
+                        throw new InvalidOperationException("The client area is outside the captured window image.");
+                    }
+
+                    Bitmap cropped = new();
+                    try
+                    {
+                        if (!bitmap.ExtractSubset(cropped, new SKRectI(crop.X, crop.Y, crop.Right, crop.Bottom)))
+                        {
+                            throw new InvalidOperationException("The client area could not be extracted from the captured window image.");
+                        }
+                    }
+                    catch
+                    {
+                        cropped.Dispose();
+                        throw;
+                    }
+
+                    bitmap.Dispose();
+                    bitmap = cropped;
+                }
+
+                if (CaptureCursor)
+                {
+                    try { new CursorData().DrawCursor(bitmap, captureRectangle.Location); }
                     catch (Exception exception) { DebugHelper.WriteException(exception, "Cursor capture failed."); }
                 }
 
                 return bitmap;
             }
-            catch (Exception exception)
+            catch
             {
-                DebugHelper.WriteException(exception, "Windows Graphics Capture window screenshot failed. Falling back to GDI.");
-                return null;
+                bitmap.Dispose();
+                throw;
             }
         }
 

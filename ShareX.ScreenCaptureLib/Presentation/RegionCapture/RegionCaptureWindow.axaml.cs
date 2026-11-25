@@ -2367,17 +2367,23 @@ public partial class RegionCaptureWindow : Window
 
         DrawingRectangle screenRectangle = ToScreenRectangle(bounds);
         WindowInfo? windowInfo = includeWindowInfo ? FindTopLevelWindowInfo(screenRectangle) : null;
-        IntPtr windowHandle = includeWindowInfo && shapes.Count == 1 && shapes[0].IsRectangle &&
-            _selectedCandidate is { IsWindow: true } && _selectedCandidate.Rectangle == screenRectangle
-            ? _selectedCandidate.Handle
+        SimpleWindowInfo? selectedWindow = shapes.Count == 1 && shapes[0].IsRectangle ? _selectedCandidate : null;
+        DrawingRectangle selectedWindowRectangle = selectedWindow == null
+            ? default
+            : DrawingRectangle.Intersect(selectedWindow.Rectangle, _request!.ScreenBounds);
+        bool isWindowOrClientArea = selectedWindow is { IsWindow: true } or { IsClientArea: true };
+        IntPtr windowHandle = includeWindowInfo && isWindowOrClientArea && selectedWindowRectangle == screenRectangle
+            ? selectedWindow!.Handle
             : IntPtr.Zero;
+        bool isClientArea = windowHandle != IntPtr.Zero && selectedWindow!.IsClientArea;
 
         _pendingResult = new AvaloniaRegionCaptureResult(
             output,
             screenRectangle,
             windowInfo,
             _viewModel?.IsDirty == true,
-            windowHandle);
+            windowHandle,
+            isClientArea);
         RegionCaptureIntegration.SetLastRegion(screenRectangle, regions.Select(ToScreenRectangle).ToArray());
         _closing = true;
 

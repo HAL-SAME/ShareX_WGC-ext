@@ -32,10 +32,12 @@ using System.Drawing;
 
 namespace ShareX.ScreenCaptureLib.Presentation.RegionCapture;
 
-/// <param name="WindowHandle">The detected window whose whole rectangle is the capture, or zero.</param>
+/// <param name="WindowHandle">The detected window associated with the capture, or zero.</param>
+/// <param name="IsClientArea">Whether the selected rectangle is the detected window's client area.</param>
 public sealed record AvaloniaRegionCaptureResult(
     SKBitmap Image,
     Rectangle ScreenRectangle,
     WindowInfo? WindowInfo,
     bool ImageModified,
-    IntPtr WindowHandle = default);
+    IntPtr WindowHandle = default,
+    bool IsClientArea = false);

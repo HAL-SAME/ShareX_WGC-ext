@@ -28,7 +28,6 @@
 using ShareX.HelpersLib;
 using ShareX.ImageEditor.Integration;
 using ShareX.ScreenCaptureLib.Presentation.RegionCapture;
-using ShareX.ScreenRecordingLib.Video;
 using SkiaSharp;
 using System.Collections.Generic;
 using System.Drawing;
@@ -171,12 +170,28 @@ public static class RegionCaptureTasks
         {
             try
             {
-                Bitmap? windowImage = await Task.Run(() => WindowsGraphicsCapture.CaptureWindow(result.WindowHandle, hdrToneMapping));
+                Screenshot screenshot = new Screenshot
+                {
+                    CaptureClientArea = result.IsClientArea,
+                    UseWindowsGraphicsCapture = true,
+                    HDRScreenshotColorCorrection = hdrToneMapping
+                };
+                Rectangle rectangle = result.IsClientArea
+                    ? NativeMethods.GetClientRect(result.WindowHandle)
+                    : CaptureHelpers.GetWindowRectangle(result.WindowHandle);
+                Bitmap? windowImage = await Task.Run(() => screenshot.CaptureWindowWindowsGraphicsCapture(result.WindowHandle));
                 if (windowImage != null)
                 {
-                    Rectangle windowRectangle = CaptureHelpers.GetWindowRectangle(result.WindowHandle);
-                    windowRectangle.Size = new Size(windowImage.Width, windowImage.Height);
-                    return (windowImage, windowRectangle);
+                    Rectangle currentRectangle = result.IsClientArea
+                        ? NativeMethods.GetClientRect(result.WindowHandle)
+                        : CaptureHelpers.GetWindowRectangle(result.WindowHandle);
+                    if (currentRectangle != rectangle || rectangle.Width != windowImage.Width || rectangle.Height != windowImage.Height)
+                    {
+                        windowImage.Dispose();
+                        throw new System.InvalidOperationException("The capture target moved or changed size during capture.");
+                    }
+
+                    return (windowImage, rectangle);
                 }
             }
             catch (System.Exception exception)

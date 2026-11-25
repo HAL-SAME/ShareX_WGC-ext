@@ -186,7 +186,7 @@ namespace ShareX.ScreenCaptureLib
 
                 if (clientRect.IsValid() && !IsSameAsWindowRectangle(clientRect, simpleWindowInfo.Rectangle))
                 {
-                    windows.Add(new SimpleWindowInfo(handle, clientRect));
+                    windows.Add(new SimpleWindowInfo(handle, clientRect) { IsClientArea = true });
                 }
             }
 
